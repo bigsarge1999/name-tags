@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Label Dispatch — Avery 5163 / 8163</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- Firebase (modular SDK, loaded as ES module below) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth, signInAnonymously, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    getFirestore, collection, doc, setDoc, getDocs, deleteDoc
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ---- FILL IN YOUR OWN FIREBASE CONFIG HERE ----
+  // Get this from Firebase Console > Project Settings > General > Your apps > SDK setup and config
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+  // ------------------------------------------------
+
+  let app, auth, db, uid = null;
+  let firebaseReady = false;
+
+  function fbStatus(msg, ok) {
+    const el = document.getElementById('fbStatus');
+    const dot = document.getElementById('fbDot');
+    if (el) el.textContent = msg;
+    if (dot) dot.className = 'dot ' + (ok ? 'dot-ok' : 'dot-warn');
+  }
+
+  try {
+    if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      signInAnonymously(auth).catch(err => fbStatus("Sign-in failed", false));
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          uid = user.uid;
+          firebaseReady = true;
+          fbStatus("Cloud connected", true);
+          window.__loadSavedLists && window.__loadSavedLists();
+        }
+      });
+    } else {
+      fbStatus("Cloud not configured", false);
+    }
+  } catch (e) {
+    fbStatus("Config error", false);
+  }
+
+  window.__firebase = {
+    isReady: () => firebaseReady,
+    saveList: async (name, rows) => {
+      if (!firebaseReady) throw new Error("Cloud save not connected");
+      await setDoc(doc(collection(db, "users", uid, "lists"), name), {
+        rows, updatedAt: Date.now()
+      });
+    },
+    loadLists: async () => {
+      if (!firebaseReady) return [];
+      const snap = await getDocs(collection(db, "users", uid, "lists"));
+      const out = [];
+      snap.forEach(d => out.push({ id: d.id, ...d.data() }));
+      return out;
+    },
+    deleteList: async (name) => {
+      if (!firebaseReady) return;
+      await deleteDoc(doc(collection(db, "users", uid, "lists"), name));
+    }
+  };
+</script>
+
+<style>
+  :root{
+    --navy-900:#0c1826; --navy-800:#132840; --navy-700:#1c3654;
+    --steel-100:#eef1f5; --card:#ffffff; --line:#dde3ea;
+    --ink:#141c26; --muted:#6b7686;
+    --amber:#f2a53d; --amber-ink:#22160a;
+    --green:#1f9d55; --red:#d6493f;
+    --font-display:'Oswald',sans-serif;
+    --font-body:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    --font-mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:var(--font-body);
+    margin:0; background:var(--steel-100); color:var(--ink);
+  }
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{
+    background:linear-gradient(180deg,var(--navy-800),var(--navy-900));
+    color:#fff; padding:16px 28px;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+    border-bottom:3px solid var(--amber);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-mark{
+    width:38px; height:38px; border-radius:8px; background:var(--amber);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .brand-mark svg{ width:22px; height:22px; }
+  .brand h1{
+    font-family:var(--font-display); font-size:1.25rem; margin:0; font-weight:600;
+    letter-spacing:.03em; text-transform:uppercase;
+  }
+  .brand .sub{ font-size:.75rem; color:#9fb0c3; letter-spacing:.04em; }
+  .status-pill{
+    display:flex; align-items:center; gap:8px; background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:7px 14px;
+    font-size:.78rem; color:#dbe4ee;
+  }
+  .dot{ width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .dot-ok{ background:var(--green); box-shadow:0 0 0 3px rgba(31,157,85,.2); }
+  .dot-warn{ background:var(--amber); box-shadow:0 0 0 3px rgba(242,165,61,.2); }
+
+  /* ---------- STAT STRIP ---------- */
+  .stats{
+    max-width:1180px; margin:22px auto 0; padding:0 24px;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px;
+  }
+  .stat-card{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; position:relative; overflow:hidden;
+  }
+  .stat-card::before{
+    content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--amber);
+  }
+  .stat-label{
+    font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600;
+  }
+  .stat-value{
+    font-family:var(--font-mono); font-size:1.65rem; font-weight:700; color:var(--navy-900); margin-top:2px;
+  }
+  .stat-value.small{ font-size:1.1rem; }
+
+  /* ---------- MAIN GRID ---------- */
+  main{ max-width:1180px; margin:0 auto; padding:20px 24px 40px; display:grid; grid-template-columns:1.5fr 1fr; gap:18px; }
+  @media (max-width: 860px){ main{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(2,1fr); } }
+
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:20px; margin-bottom:18px; align-self:start;
+  }
+  .panel-head{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .panel-icon{
+    width:30px; height:30px; border-radius:7px; background:var(--navy-900);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .panel-icon svg{ width:16px; height:16px; stroke:var(--amber); }
+  .panel h2{
+    font-family:var(--font-display); font-size:.92rem; margin:0; font-weight:600;
+    text-transform:uppercase; letter-spacing:.03em; color:var(--navy-900);
+  }
+  .col-right{ grid-column:2; }
+  .col-left{ grid-column:1; }
+  @media (max-width:860px){ .col-right, .col-left{ grid-column:1; } }
+
+  .row{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+  label{ font-size:.78rem; color:var(--muted); font-weight:600; }
+  select, input[type=text], input[type=number]{
+    padding:9px 11px; border:1px solid var(--line); border-radius:7px; font-size:.9rem;
+    font-family:var(--font-body); background:#fff;
+  }
+  select:focus, input:focus{ outline:2px solid var(--amber); outline-offset:1px; }
+
+  button{
+    background:var(--navy-900); color:#fff; border:none; border-radius:7px;
+    padding:10px 18px; font-size:.85rem; cursor:pointer; font-weight:600;
+    letter-spacing:.02em; transition:transform .05s ease;
+  }
+  button:hover:not(:disabled){ background:var(--navy-700); }
+  button:active:not(:disabled){ transform:scale(.98); }
+  button.primary{ background:var(--amber); color:var(--amber-ink); }
+  button.primary:hover:not(:disabled){ background:#e0953a; }
+  button.secondary{ background:#eef1f5; color:var(--navy-900); border:1px solid var(--line); }
+  button.danger{ background:var(--red); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+
+  #dropzone{
+    border:2px dashed var(--line); border-radius:10px; padding:28px; text-align:center;
+    color:var(--muted); cursor:pointer; background:var(--steel-100);
+  }
+  #dropzone.drag{ border-color:var(--amber); background:#fdf3e4; }
+  #dropzone strong{ color:var(--ink); }
+
+  table.preview{ width:100%; border-collapse:collapse; font-size:.83rem; margin-top:12px; }
+  table.preview th, table.preview td{ border:1px solid var(--line); padding:6px 8px; text-align:left; }
+  table.preview th{ background:var(--steel-100); font-family:var(--font-mono); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .small{ font-size:.78rem; color:var(--muted); }
+
+  hr.div{ border:none; border-top:1px solid var(--line); margin:16px 0; }
+
+  /* ---------- CHARTS ROW ---------- */
+  .charts-row{
+    max-width:1180px; margin:16px auto 0; padding:0 24px;
+    display:grid; grid-template-columns:1fr 1.6fr; gap:14px;
+  }
+  @media (max-width:860px){ .charts-row{ grid-template-columns:1fr; } }
+  .chart-panel{
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px;
+    display:flex; align-items:center; gap:18px;
+  }
+  .chart-panel.bar{ flex-direction:column; align-items:stretch; }
+  .donut-figures{ display:flex; flex-direction:column; }
+  .donut-pct{ font-family:var(--font-mono); font-size:1.5rem; font-weight:700; color:var(--navy-900); }
+  .donut-caption{ font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+  .bar-chart-title{
+    font-family:var(--font-display); font-size:.8rem; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--navy-900); margin-bottom:12px; font-weight:600;
+  }
+  .bar-chart{ display:flex; align-items:flex-end; gap:8px; height:90px; }
+  .bar-col{ display:flex; flex-direction:column; align-items:center; flex:1; min-width:0; height:100%; justify-content:flex-end; }
+  .bar-fill{ width:100%; max-width:26px; background:var(--amber); border-radius:4px 4px 0 0; }
+  .bar-fill.empty{ background:var(--line); }
+  .bar-label{ font-family:var(--font-mono); font-size:.62rem; color:var(--muted); margin-top:5px; }
+  .bar-chart-empty{ color:var(--muted); font-size:.85rem; font-style:italic; }
+
+  /* ---------- ACTIVITY FEED ---------- */
+  .activity-list{ list-style:none; margin:0; padding:0; }
+  .activity-item{
+    display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:.82rem;
+  }
+  .activity-item:last-child{ border-bottom:none; }
+  .activity-time{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); white-space:nowrap; padding-top:1px; }
+  .activity-dot{ width:6px; height:6px; border-radius:50%; background:var(--amber); margin-top:6px; flex-shrink:0; }
+  .activity-empty{ color:var(--muted); font-size:.85rem; font-style:italic; }
+
+  /* ---------- MANIFEST GAUGE (signature element) ---------- */
+  .gauge-wrap{ margin-top:6px; }
+  .gauge-sheet{ margin-bottom:10px; }
+  .gauge-sheet-label{
+    font-family:var(--font-mono); font-size:.7rem; color:var(--muted); margin-bottom:5px;
+    display:flex; justify-content:space-between;
+  }
+  .gauge-row{ display:grid; grid-template-columns:repeat(10,1fr); gap:3px; }
+  .gauge-cell{
+    height:14px; border-radius:3px; background:var(--line);
+  }
+  .gauge-cell.filled{ background:var(--amber); }
+  .gauge-empty{ font-size:.8rem; color:var(--muted); font-style:italic; }
+
+  /* ---------- PRINT SHEET ---------- */
+  .sheet{
+    width:8.5in; height:11in; margin:0 auto; background:#fff;
+    position:relative;
+    padding: 0.5in 0.15625in;
+    display:grid;
+    grid-template-columns: 4in 4in;
+    grid-template-rows: repeat(5, 2in);
+    column-gap: 0.1875in;
+    row-gap:0;
+    box-shadow:0 0 0 1px #ddd;
+  }
+  .label{
+    width:4in; height:2in; overflow:hidden;
+    display:flex; align-items:center; justify-content:flex-start;
+    padding:0.28in 0.32in;
+    font-size:20pt; line-height:1.25; font-weight:600; word-break:break-word;
+    font-family:var(--font-body);
+  }
+  .label .name{ width:100%; }
+  #printArea{ display:none; }
+
+  @media print{
+    body *{ visibility:hidden; }
+    #printArea, #printArea *{ visibility:visible; }
+    #printArea{ display:block; position:absolute; top:0; left:0; }
+    .sheet{ box-shadow:none; margin:0; page-break-after:always; }
+    @page{ size:letter; margin:0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#22160a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="10"/><path d="M16 10h3l2 3v4h-5"/><circle cx="7.5" cy="19" r="1.7"/><circle cx="17.5" cy="19" r="1.7"/></svg>
+    </div>
+    <div>
+      <h1>Label Dispatch</h1>
+      <div class="sub">Avery 5163 / 8163 · 2" × 4" · 10 per sheet</div>
+    </div>
+  </div>
+  <div class="status-pill"><span class="dot dot-warn" id="fbDot"></span><span id="fbStatus">Checking cloud save…</span></div>
+</div>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Names loaded</div>
+    <div class="stat-value" id="statNames">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sheets needed</div>
+    <div class="stat-value" id="statSheets">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Template</div>
+    <div class="stat-value small">5163 / 8163</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Last source</div>
+    <div class="stat-value small" id="statSource">—</div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-panel" id="donutPanel">
+    <svg id="donutSvg" width="86" height="86" viewBox="0 0 86 86">
+      <circle cx="43" cy="43" r="36" fill="none" stroke="#dde3ea" stroke-width="10"/>
+      <circle id="donutArc" cx="43" cy="43" r="36" fill="none" stroke="#f2a53d" stroke-width="10"
+        stroke-dasharray="0 226" stroke-linecap="round" transform="rotate(-90 43 43)"/>
+    </svg>
+    <div class="donut-figures">
+      <div class="donut-pct" id="donutPct">0%</div>
+      <div class="donut-caption">Last sheet filled</div>
+    </div>
+  </div>
+  <div class="chart-panel bar">
+    <div class="bar-chart-title">Labels per sheet</div>
+    <div class="bar-chart" id="barChart"><span class="bar-chart-empty">Build label sheets to see this chart.</span></div>
+  </div>
+</div>
+
+<main>
+
+  <div class="col-left">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <h2>1 · Import your list</h2>
+      </div>
+      <div id="dropzone">
+        <p><strong>Drag & drop</strong> an Excel (.xlsx/.xls) or CSV file here, or click to choose one.</p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+      </div>
+      <div class="row" style="margin-top:14px;" id="columnPickRow" hidden>
+        <label>Column to use as name:</label>
+        <select id="columnPicker"></select>
+        <span class="small" id="rowCount"></span>
+      </div>
+      <div id="previewWrap"></div>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+        <h2>2 · Sheet settings</h2>
+      </div>
+      <div class="row">
+        <div><label>Label size</label><br><strong>2" × 4"</strong></div>
+        <div><label>Layout</label><br><strong>2 × 5 (10/sheet)</strong></div>
+      </div>
+      <hr class="div">
+      <div class="row">
+        <div>
+          <label>Font size (pt)</label><br>
+          <input type="number" id="fontSize" value="20" min="8" max="48" style="width:80px">
+        </div>
+        <div>
+          <label>Text align</label><br>
+          <select id="textAlign">
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+        <h2>3 · Cloud save</h2>
+      </div>
+      <div class="row">
+        <input type="text" id="saveName" placeholder="List name (e.g. Route 12)" style="flex:1; min-width:140px;">
+        <button id="saveBtn">Save</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <select id="savedLists" style="flex:1; min-width:140px;"></select>
+        <button class="secondary" id="loadBtn">Load</button>
+        <button class="danger" id="deleteBtn">Delete</button>
+      </div>
+      <p class="small" style="margin-top:10px;">Optional — requires Firebase config (see README).</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></div>
+        <h2>4 · Generate & print</h2>
+      </div>
+      <div class="row">
+        <button class="primary" id="generateBtn" disabled>Build label sheets</button>
+        <button class="secondary" id="printBtn" disabled>Print / Save as PDF</button>
+      </div>
+      <div class="gauge-wrap" id="gaugeWrap">
+        <p class="gauge-empty">Manifest gauge will show here once labels are built.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+        <h2>Activity</h2>
+      </div>
+      <ul class="activity-list" id="activityList">
+        <li class="activity-empty">Actions you take will show up here.</li>
+      </ul>
+    </div>
+  </div>
+
+</main>
+
+<div id="printArea"></div>
+
+<script>
+  let rows = [];
+  let headers = [];
+  let names = [];
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const columnPickRow = document.getElementById('columnPickRow');
+  const columnPicker = document.getElementById('columnPicker');
+  const rowCount = document.getElementById('rowCount');
+  const previewWrap = document.getElementById('previewWrap');
+  const generateBtn = document.getElementById('generateBtn');
+  const printBtn = document.getElementById('printBtn');
+  const printArea = document.getElementById('printArea');
+  const gaugeWrap = document.getElementById('gaugeWrap');
+  const statNames = document.getElementById('statNames');
+  const statSheets = document.getElementById('statSheets');
+  const statSource = document.getElementById('statSource');
+  const donutArc = document.getElementById('donutArc');
+  const donutPct = document.getElementById('donutPct');
+  const barChart = document.getElementById('barChart');
+  const activityList = document.getElementById('activityList');
+
+  const activityLog = [];
+  function logActivity(text) {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    activityLog.unshift({ time, text });
+    if (activityLog.length > 8) activityLog.pop();
+    activityList.innerHTML = activityLog.map(a =>
+      `<li class="activity-item"><span class="activity-dot"></span><div><div>${escapeHtml(a.text)}</div><div class="activity-time">${a.time}</div></div></li>`
+    ).join('');
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file) {
+    window.__cloudOverride = null;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      if (!json.length) { alert("Couldn't find any rows in that file."); return; }
+      headers = json[0].map((h, i) => (h === "" ? `Column ${i+1}` : String(h)));
+      rows = json.slice(1).filter(r => r.some(c => String(c).trim() !== ""));
+      populateColumnPicker();
+      renderPreview();
+      columnPickRow.hidden = false;
+      generateBtn.disabled = false;
+      statSource.textContent = file.name.length > 16 ? file.name.slice(0,14)+'…' : file.name;
+      updateStats(getNames().length);
+      logActivity(`Imported ${getNames().length} names from ${file.name}`);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function populateColumnPicker() {
+    columnPicker.innerHTML = "";
+    headers.forEach((h, i) => {
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = h;
+      columnPicker.appendChild(opt);
+    });
+    const guessIdx = headers.findIndex(h => /name/i.test(h));
+    if (guessIdx >= 0) columnPicker.value = guessIdx;
+    columnPicker.onchange = () => { renderPreview(); updateStats(getNames().length); };
+    rowCount.textContent = `${rows.length} rows found`;
+  }
+
+  function renderPreview() {
+    const colIdx = Number(columnPicker.value || 0);
+    let html = '<table class="preview"><thead><tr><th>#</th><th>Name (as it will print)</th></tr></thead><tbody>';
+    rows.slice(0, 30).forEach((r, i) => {
+      html += `<tr><td>${i+1}</td><td>${escapeHtml(String(r[colIdx] ?? ''))}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    if (rows.length > 30) html += `<p class="small">…and ${rows.length - 30} more.</p>`;
+    previewWrap.innerHTML = html;
+  }
+
+  function escapeHtml(s){
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function getNames() {
+    const colIdx = Number(columnPicker.value || 0);
+    return rows.map(r => String(r[colIdx] ?? '').trim()).filter(n => n !== '');
+  }
+
+  function updateStats(count) {
+    statNames.textContent = count;
+    statSheets.textContent = count ? Math.ceil(count / 10) : 0;
+  }
+
+  function renderGauge(list) {
+    const perSheet = 10;
+    const sheetCount = Math.ceil(list.length / perSheet);
+    let html = '<div class="gauge-row-wrap">';
+    for (let s = 0; s < sheetCount; s++) {
+      const filledInThisSheet = Math.min(perSheet, list.length - s * perSheet);
+      html += `<div class="gauge-sheet"><div class="gauge-sheet-label"><span>SHEET ${s+1}</span><span>${filledInThisSheet}/10</span></div><div class="gauge-row">`;
+      for (let i = 0; i < perSheet; i++) {
+        html += `<div class="gauge-cell ${i < filledInThisSheet ? 'filled' : ''}"></div>`;
+      }
+      html += '</div></div>';
+    }
+    html += '</div>';
+    gaugeWrap.innerHTML = html;
+  }
+
+  function renderCharts(list) {
+    const perSheet = 10;
+    const sheetCount = Math.ceil(list.length / perSheet);
+    const lastFilled = list.length - (sheetCount - 1) * perSheet;
+    const pct = sheetCount ? Math.round((lastFilled / perSheet) * 100) : 0;
+    const circumference = 2 * Math.PI * 36;
+    donutArc.setAttribute('stroke-dasharray', `${(pct/100)*circumference} ${circumference}`);
+    donutPct.textContent = pct + '%';
+
+    const maxBars = 12;
+    const shown = Math.min(sheetCount, maxBars);
+    let html = '';
+    for (let s = 0; s < shown; s++) {
+      const count = Math.min(perSheet, list.length - s * perSheet);
+      const heightPct = Math.max(6, Math.round((count / perSheet) * 100));
+      html += `<div class="bar-col"><div class="bar-fill${count===0?' empty':''}" style="height:${heightPct}%"></div><div class="bar-label">S${s+1}</div></div>`;
+    }
+    if (sheetCount > maxBars) {
+      html += `<div class="bar-col"><div class="bar-label" style="align-self:flex-end;">+${sheetCount-maxBars} more</div></div>`;
+    }
+    barChart.innerHTML = html || '<span class="bar-chart-empty">Build label sheets to see this chart.</span>';
+  }
+
+  generateBtn.addEventListener('click', () => {
+    names = window.__cloudOverride && window.__cloudOverride.length ? window.__cloudOverride : getNames();
+    if (!names.length) { alert('No names to print — check your column selection.'); return; }
+    buildSheets(names);
+    renderGauge(names);
+    renderCharts(names);
+    updateStats(names.length);
+    printBtn.disabled = false;
+    logActivity(`Built ${Math.ceil(names.length/10)} sheet(s) for ${names.length} labels`);
+  });
+
+  function buildSheets(list) {
+    const fontSize = document.getElementById('fontSize').value || 20;
+    const align = document.getElementById('textAlign').value;
+    printArea.innerHTML = '';
+    const perSheet = 10;
+    const sheetCount = Math.ceil(list.length / perSheet);
+    for (let s = 0; s < sheetCount; s++) {
+      const sheetDiv = document.createElement('div');
+      sheetDiv.className = 'sheet';
+      for (let i = 0; i < perSheet; i++) {
+        const idx = s * perSheet + i;
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'label';
+        labelDiv.style.fontSize = fontSize + 'pt';
+        labelDiv.style.justifyContent = align === 'center' ? 'center' : 'flex-start';
+        labelDiv.style.textAlign = align;
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'name';
+        nameDiv.textContent = list[idx] || '';
+        labelDiv.appendChild(nameDiv);
+        sheetDiv.appendChild(labelDiv);
+      }
+      printArea.appendChild(sheetDiv);
+    }
+  }
+
+  printBtn.addEventListener('click', () => { logActivity('Opened print dialog'); window.print(); });
+
+  // ---- Firebase cloud save wiring ----
+  const saveBtn = document.getElementById('saveBtn');
+  const saveName = document.getElementById('saveName');
+  const savedLists = document.getElementById('savedLists');
+  const loadBtn = document.getElementById('loadBtn');
+  const deleteBtn = document.getElementById('deleteBtn');
+
+  saveBtn.addEventListener('click', async () => {
+    const nm = saveName.value.trim();
+    if (!nm) { alert('Give the list a name first.'); return; }
+    const list = getNames();
+    if (!list.length) { alert('Import a file first.'); return; }
+    try {
+      await window.__firebase.saveList(nm, list);
+      await refreshSavedLists();
+      logActivity(`Saved list "${nm}" to cloud (${list.length} names)`);
+      alert('Saved.');
+    } catch (e) { alert(e.message); }
+  });
+
+  loadBtn.addEventListener('click', async () => {
+    const nm = savedLists.value;
+    if (!nm) return;
+    const lists = await window.__firebase.loadLists();
+    const found = lists.find(l => l.id === nm);
+    if (!found) return;
+    names = found.rows;
+    previewWrap.innerHTML = '<table class="preview"><thead><tr><th>#</th><th>Name</th></tr></thead><tbody>' +
+      names.slice(0,30).map((n,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(n)}</td></tr>`).join('') +
+      '</tbody></table>';
+    columnPickRow.hidden = true;
+    generateBtn.disabled = false;
+    window.__cloudOverride = names;
+    statSource.textContent = 'Cloud: ' + nm;
+    updateStats(names.length);
+    logActivity(`Loaded list "${nm}" from cloud (${names.length} names)`);
+  });
+
+  deleteBtn.addEventListener('click', async () => {
+    const nm = savedLists.value;
+    if (!nm) return;
+    if (!confirm(`Delete "${nm}"?`)) return;
+    await window.__firebase.deleteList(nm);
+    await refreshSavedLists();
+  });
+
+  async function refreshSavedLists() {
+    const lists = await window.__firebase.loadLists();
+    savedLists.innerHTML = lists.map(l => `<option value="${l.id}">${l.id} (${l.rows.length})</option>`).join('');
+  }
+  window.__loadSavedLists = refreshSavedLists;
+</script>
+
+</body>
+</html>
